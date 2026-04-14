@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abuse Masker — Live Stream</title>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0e0e10;
+      color: #efeff1;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      flex-shrink: 0;
+      background: #18181b;
+      border-bottom: 1px solid #2d2d32;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .live-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: #eb0400;
+      box-shadow: 0 0 6px #eb0400;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1rem; font-weight: 700; }
+    header .sub { font-size: .75rem; color: #adadb8; margin-top: 1px; }
+    .viewer-count {
+      margin-left: auto;
+      background: #2d2d32;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: .75rem;
+      color: #adadb8;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .viewer-count span { color: #efeff1; font-weight: 700; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: .72rem;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 20px;
+      background: #3d1f1f;
+      color: #f87171;
+      margin-left: 10px;
+    }
+    .status-pill.connected { background: #1a3a2a; color: #4ade80; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* ── Main layout ── */
+    .main-layout {
+      flex: 1;
+      display: flex;
+      gap: 14px;
+      padding: 14px;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    /* ── Left column: stream + API panel ── */
+    .left-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .stream-panel {
+      flex: 1;
+      min-height: 0;
+      background: #18181b;
+      border: 1px solid #2d2d32;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #adadb8;
+      gap: 8px;
+    }
+    .stream-icon { font-size: 2.5rem; }
+    .stream-panel p { font-size: .85rem; }
+
+    /* ── REST API panel ── */
+    .api-card {
+      flex-shrink: 0;
+      background: #18181b;
+      border: 1px solid #2d2d32;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    details { cursor: pointer; }
+    details summary {
+      list-style: none;
+      padding: 11px 16px;
+      font-weight: 700;
+      font-size: .85rem;
+      color: #efeff1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+    details summary::-webkit-details-marker { display: none; }
+    details summary .chevron { transition: transform .2s; display: inline-block; color: #adadb8; font-style: normal; }
+    details[open] summary { border-bottom: 1px solid #2d2d32; }
+    details[open] summary .chevron { transform: rotate(90deg); }
+
+    .api-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding: 12px;
+      max-height: 230px;
+      overflow-y: auto;
+    }
+    .api-box {
+      background: #0e0e10;
+      border-radius: 8px;
+      border: 1px solid #2d2d32;
+      padding: 12px;
+    }
+    .api-box h4 {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: #9147ff;
+      margin-bottom: 8px;
+    }
+    .api-box input {
+      width: 100%;
+      padding: 6px 9px;
+      background: #18181b;
+      border: 1px solid #3d3d42;
+      border-radius: 6px;
+      color: #efeff1;
+      font-size: .8rem;
+      margin-bottom: 7px;
+      outline: none;
+    }
+    .api-box input:focus { border-color: #9147ff; }
+    .api-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    button.api-btn {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 5px;
+      font-size: .75rem;
+      cursor: pointer;
+      font-weight: 700;
+      transition: opacity .2s;
+    }
+    button.api-btn:hover { opacity: .85; }
+    .btn-purple { background: #9147ff; color: #fff; }
+    .btn-green  { background: #22c55e; color: #fff; }
+    .btn-red    { background: #ef4444; color: #fff; }
+    .btn-slate  { background: #3d3d42; color: #efeff1; }
+    pre.api-result {
+      background: #0a0a0c;
+      border: 1px solid #2d2d32;
+      color: #a3e635;
+      border-radius: 5px;
+      padding: 8px;
+      font-size: .72rem;
+      margin-top: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 80px;
+      overflow-y: auto;
+    }
+
+    /* ── Chat panel ── */
+    .chat-panel {
+      width: 300px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: #18181b;
+      border: 1px solid #2d2d32;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .chat-panel-header {
+      flex-shrink: 0;
+      padding: 11px 14px;
+      border-bottom: 1px solid #2d2d32;
+      font-size: .82rem;
+      font-weight: 700;
+    }
+    #feed {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      min-height: 0;
+    }
+    #feed::-webkit-scrollbar { width: 3px; }
+    #feed::-webkit-scrollbar-track { background: transparent; }
+    #feed::-webkit-scrollbar-thumb { background: #3d3d42; border-radius: 4px; }
+
+    .comment { font-size: .83rem; line-height: 1.45; }
+    .comment-user { font-weight: 700; margin-right: 5px; }
+    .comment-text { color: #efeff1; }
+    .comment-original {
+      display: block;
+      font-size: .72rem;
+      color: #6a6a72;
+      text-decoration: line-through;
+      margin-top: 1px;
+    }
+    .masked-word {
+      background: #3d2e00;
+      color: #fbbf24;
+      border-radius: 3px;
+      padding: 0 2px;
+      font-weight: 600;
+    }
+
+    .color-0 { color: #9147ff; }
+    .color-1 { color: #00b5ad; }
+    .color-2 { color: #ff6b6b; }
+    .color-3 { color: #4ade80; }
+    .color-4 { color: #60a5fa; }
+    .color-5 { color: #f472b6; }
+    .color-6 { color: #fb923c; }
+    .color-7 { color: #a78bfa; }
+
+    /* ── Chat input ── */
+    .chat-input-area {
+      flex-shrink: 0;
+      padding: 10px;
+      border-top: 1px solid #2d2d32;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .chat-input-area input {
+      width: 100%;
+      padding: 7px 10px;
+      background: #0e0e10;
+      border: 1px solid #3d3d42;
+      border-radius: 6px;
+      color: #efeff1;
+      font-size: .82rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .chat-input-area input:focus { border-color: #9147ff; }
+    .chat-input-area input::placeholder { color: #6a6a72; }
+    .send-row { display: flex; align-items: center; gap: 8px; }
+    .char-count { font-size: .7rem; color: #6a6a72; margin-left: auto; }
+    .char-count.warn { color: #f87171; }
+    button.chat-btn {
+      padding: 7px 16px;
+      background: #9147ff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: .82rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    button.chat-btn:hover { background: #772ce8; }
+    button.chat-btn:disabled { background: #3d3d42; color: #6a6a72; cursor: default; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="live-dot"></div>
+  <div>
+    <h1>Abuse Masker &mdash; Live Stream</h1>
+    <div class="sub">Trie-based real-time comment filtering</div>
+  </div>
+  <div class="viewer-count">&#128065; <span id="viewerCount">1</span> watching</div>
+  <span id="statusPill" class="status-pill">
+    <span class="status-dot"></span> Connecting&hellip;
+  </span>
+</header>
+
+<div class="main-layout">
+
+  <!-- Left column -->
+  <div class="left-col">
+
+    <!-- Stream placeholder -->
+    <div class="stream-panel">
+      <div class="stream-icon">&#127909;</div>
+      <p>Stream goes here</p>
+    </div>
+
+    <!-- REST API panel -->
+    <div class="api-card">
+      <details>
+        <summary>
+          <i class="chevron">&#9658;</i>
+          Try the REST API
+        </summary>
+        <div class="api-grid">
+
+          <div class="api-box">
+            <h4>GET /mask</h4>
+            <input id="apiText" placeholder="Text to mask&hellip;" />
+            <div class="api-row">
+              <button class="api-btn btn-purple" onclick="apiMask()">Mask</button>
+            </div>
+            <pre id="maskResult" class="api-result" style="display:none"></pre>
+          </div>
+
+          <div class="api-box">
+            <h4>POST /admin/words &middot; DELETE /admin/words/{word}</h4>
+            <input id="adminWord" placeholder="A bad word&hellip;" />
+            <div class="api-row">
+              <button class="api-btn btn-green" onclick="apiAddWord()">Add</button>
+              <button class="api-btn btn-red"   onclick="apiRemoveWord()">Remove</button>
+              <button class="api-btn btn-slate" onclick="apiListWords()">List All</button>
+            </div>
+            <pre id="adminResult" class="api-result" style="display:none"></pre>
+          </div>
+
+          <div class="api-box">
+            <h4>GET /stats</h4>
+            <div class="api-row">
+              <button class="api-btn btn-purple" onclick="apiStats()">Fetch Stats</button>
+            </div>
+            <pre id="statsResult" class="api-result" style="display:none"></pre>
+          </div>
+
+        </div>
+      </details>
+    </div>
+
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel">
+    <div class="chat-panel-header">LIVE CHAT</div>
+
+    <div id="feed"></div>
+
+    <div class="chat-input-area">
+      <input id="username" placeholder="Your username" maxlength="24" />
+      <input id="msgInput" placeholder="Send a message&hellip;" maxlength="200"
+             oninput="updateCharCount()" onkeydown="if(event.key==='Enter') postComment()" />
+      <div class="send-row">
+        <button class="chat-btn" id="sendBtn" onclick="postComment()" disabled>Chat</button>
+        <span class="char-count" id="charCount">200</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── WebSocket ────────────────────────────────────────────────
+let stompClient = null;
+const userColors = {};
+const palette = ['color-0','color-1','color-2','color-3','color-4','color-5','color-6','color-7'];
+let colorIndex = 0;
+
+function colorFor(username) {
+  if (!userColors[username]) {
+    userColors[username] = palette[colorIndex % palette.length];
+    colorIndex++;
+  }
+  return userColors[username];
+}
+
+function connect() {
+  const socket = new SockJS('/chat');
+  stompClient = Stomp.over(socket);
+  stompClient.debug = null;
+
+  stompClient.connect({}, function () {
+    setStatus(true);
+    stompClient.subscribe('/topic/messages', function (msg) {
+      showComment(JSON.parse(msg.body));
+      const v = document.getElementById('viewerCount');
+      if (Math.random() > 0.6) v.textContent = parseInt(v.textContent) + 1;
+    });
+  }, function () {
+    setStatus(false);
+  });
+}
+
+function setStatus(connected) {
+  const pill = document.getElementById('statusPill');
+  pill.className = 'status-pill' + (connected ? ' connected' : '');
+  pill.innerHTML = '<span class="status-dot"></span> ' + (connected ? 'Connected' : 'Disconnected');
+  document.getElementById('sendBtn').disabled = !connected;
+}
+
+function postComment() {
+  const usernameEl = document.getElementById('username');
+  const msgEl = document.getElementById('msgInput');
+  const username = usernameEl.value.trim() || 'Anonymous';
+  const msg = msgEl.value.trim();
+  if (!msg || !stompClient) return;
+  stompClient.send('/app/send', {}, JSON.stringify({ username, content: msg }));
+  msgEl.value = '';
+  updateCharCount();
+}
+
+function updateCharCount() {
+  const el = document.getElementById('msgInput');
+  const count = document.getElementById('charCount');
+  const remaining = 200 - el.value.length;
+  count.textContent = remaining;
+  count.className = 'char-count' + (remaining < 20 ? ' warn' : '');
+}
+
+function highlightMasked(text) {
+  return text.replace(/\*+/g, function(m) {
+    return '<span class="masked-word">' + m + '</span>';
+  });
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showComment(data) {
+  const feed = document.getElementById('feed');
+  const div = document.createElement('div');
+  div.className = 'comment';
+  const hasMasking = data.originalContent && data.originalContent !== data.content;
+  div.innerHTML =
+    '<span class="comment-user ' + colorFor(data.username) + '">' + escHtml(data.username) + ':</span>' +
+    '<span class="comment-text">' + highlightMasked(escHtml(data.content)) + '</span>' +
+    (hasMasking ? '<span class="comment-original">original: ' + escHtml(data.originalContent) + '</span>' : '');
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+// ── REST API ─────────────────────────────────────────────────
+async function apiMask() {
+  const text = document.getElementById('apiText').value.trim();
+  if (!text) return;
+  try {
+    const res = await fetch('/mask?text=' + encodeURIComponent(text));
+    showApiResult('maskResult', res.ok ? await res.json() : await res.text());
+  } catch (e) { showApiResult('maskResult', 'Error: ' + e.message); }
+}
+
+async function apiAddWord() {
+  const word = document.getElementById('adminWord').value.trim();
+  if (!word) return;
+  try {
+    const res = await fetch('/admin/words', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ word })
+    });
+    showApiResult('adminResult', await res.text());
+  } catch (e) { showApiResult('adminResult', 'Error: ' + e.message); }
+}
+
+async function apiRemoveWord() {
+  const word = document.getElementById('adminWord').value.trim();
+  if (!word) return;
+  try {
+    const res = await fetch('/admin/words/' + encodeURIComponent(word), { method: 'DELETE' });
+    showApiResult('adminResult', await res.text());
+  } catch (e) { showApiResult('adminResult', 'Error: ' + e.message); }
+}
+
+async function apiListWords() {
+  try {
+    const res = await fetch('/admin/words');
+    showApiResult('adminResult', await res.json());
+  } catch (e) { showApiResult('adminResult', 'Error: ' + e.message); }
+}
+
+async function apiStats() {
+  try {
+    const res = await fetch('/stats');
+    showApiResult('statsResult', await res.json());
+  } catch (e) { showApiResult('statsResult', 'Error: ' + e.message); }
+}
+
+function showApiResult(id, data) {
+  const el = document.getElementById(id);
+  el.style.display = 'block';
+  el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+}
+
+connect();
+</script>
+</body>
+</html>

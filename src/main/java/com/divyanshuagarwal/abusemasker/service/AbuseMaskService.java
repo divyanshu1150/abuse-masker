@@ -45,17 +45,19 @@ public class AbuseMaskService {
         for (int i = 0; i < lower.length(); i++) {
             TrieNode node = trieService.getRoot();
             int j = i;
+            boolean foundMatch = false;
             while (j < lower.length() && node.children.containsKey(lower.charAt(j))) {
                 node = node.children.get(lower.charAt(j));
                 if (node.isEndOfWord) {
                     boolean boundaryOk = !wordBoundary || isBoundary(lower, i, j);
                     if (boundaryOk) {
                         maskRange(result, i, j);
-                        maskedWordCount++;
+                        foundMatch = true;
                     }
                 }
                 j++;
             }
+            if (foundMatch) maskedWordCount++;
         }
 
         totalMessagesProcessed.incrementAndGet();

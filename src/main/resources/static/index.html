@@ -391,6 +391,20 @@ function colorFor(username) {
   return userColors[username];
 }
 
+let viewerPollInterval = null;
+
+function pollViewers() {
+  viewerPollInterval = setInterval(async function () {
+    try {
+      const res = await fetch('/stats');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('viewerCount').textContent = data.connectedViewers;
+      }
+    } catch (e) {}
+  }, 3000);
+}
+
 function connect() {
   const socket = new SockJS('/chat');
   stompClient = Stomp.over(socket);
@@ -400,9 +414,8 @@ function connect() {
     setStatus(true);
     stompClient.subscribe('/topic/messages', function (msg) {
       showComment(JSON.parse(msg.body));
-      const v = document.getElementById('viewerCount');
-      if (Math.random() > 0.6) v.textContent = parseInt(v.textContent) + 1;
     });
+    pollViewers();
   }, function () {
     setStatus(false);
   });

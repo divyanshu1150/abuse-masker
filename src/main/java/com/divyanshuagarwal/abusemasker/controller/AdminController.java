@@ -3,6 +3,7 @@ package com.divyanshuagarwal.abusemasker.controller;
 import com.divyanshuagarwal.abusemasker.model.StatsResponse;
 import com.divyanshuagarwal.abusemasker.service.AbuseMaskService;
 import com.divyanshuagarwal.abusemasker.service.TrieService;
+import com.divyanshuagarwal.abusemasker.service.ViewerCountService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +16,7 @@ public class AdminController {
 
     @Autowired private TrieService trieService;
     @Autowired private AbuseMaskService abuseMaskService;
+    @Autowired private ViewerCountService viewerCountService;
 
     @GetMapping("/admin/words")
     public List<String> listWords() {
@@ -42,7 +44,8 @@ public class AdminController {
         return new StatsResponse(
             abuseMaskService.getTotalMessagesProcessed(),
             abuseMaskService.getTotalWordsMasked(),
-            trieService.getAllWords().size()
+            trieService.getAllWords().size(),
+            viewerCountService.getCount()
         );
     }
 }
